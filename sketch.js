@@ -2,10 +2,11 @@ let missiles = [];
 let particles = [];
 let stars = [];
 
-let shieldRadius = 48; // 타겟 크기 (고정)
-let shieldPadding = 10; // 보호막 두께 (이게 닳아감)
-let shieldThickness = 4;
+let shieldRadius = 55; // 타겟 크기 (고정)
+let shieldPadding = 15; // 보호막과 타겟 사이 거리
+let shieldThickness = 8;
 let shieldDepletion = 0; // 실드 감소량 (0~1)
+let shieldWarning = 20; // 내구도 경고를 시작할 수치
 let extraHits = 0;
 let maxExtraHits = 2;
 
@@ -22,11 +23,15 @@ let coreMaxSpeed = 7;
 let coreMaxForce = 0.5;
 
 let dungGeunMoFont;
+let deathSound;
+let explosionSound;
 
 function preload() {
   dungGeunMoFont = loadFont(
     "https://fastly.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/DungGeunMo.woff"
   );
+  explosionSound = loadSound("explosion.mp3");
+  deathSound = loadSound("death.mp3");
 }
 
 function setup() {
@@ -49,7 +54,7 @@ function setup() {
     });
   }
 
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 25; i++) {
     let delay = random(3000, 15000);
     setTimeout(() => {
       if (!isGameOver) {
@@ -59,8 +64,13 @@ function setup() {
   }
 }
 
+function mousePressed() {
+  userStartAudio();
+  explosionSound.setVolume(0.1);
+}
+
 function draw() {
-  background(0, 30, 60);
+  background("#091624");
 
   // 별 배경
   noStroke();
@@ -98,29 +108,68 @@ function draw() {
   let effectivePadding = shieldPadding * (1 - shieldDepletion);
 
   // 보호막 그리기 (내구도 0이면 숨김)
+  // if (shieldDepletion < 1) {
+  //   noFill();
+  //   stroke(0, 255, 255);
+  //   strokeWeight(shieldThickness);
+  //   ellipse(
+  //     shakenTarget.x,
+  //     shakenTarget.y,
+  //     (shieldRadius + effectivePadding) * 2,
+  //     (shieldRadius + effectivePadding) * 1.3
+  //   );
+  // }
   if (shieldDepletion < 1) {
     noFill();
-    stroke(0, 255, 255);
-    strokeWeight(shieldThickness);
+
+    // 내구도 기준으로 보호막 색상 결정
+    if (1 - shieldDepletion <= shieldWarning / 100) {
+      // 경고 기준 이하면 빨간색 깜빡임
+      if (floor(frameCount / 30) % 2 == 0) {
+        stroke(255, 0, 0); // 빨간색
+      } else {
+        stroke(0, 255, 255); // 원래 cyan
+      }
+    } else {
+      stroke(0, 255, 255);
+    }
+
+    let currentThickness = round(shieldThickness * (1 - shieldDepletion));
+    strokeWeight(currentThickness);
+
     ellipse(
       shakenTarget.x,
       shakenTarget.y,
-      (shieldRadius + effectivePadding) * 2,
-      (shieldRadius + effectivePadding) * 1.3
+      (shieldRadius + shieldPadding) * 2,
+      (shieldRadius + shieldPadding) * 1.3
     );
   }
 
+  // // 타겟 본체 (항상 고정)
+  // if (!isGameOver) {
+  //   fill(127);
+  //   stroke(0);
+  //   strokeWeight(2);
+  //   ellipse(
+  //     shakenTarget.x,
+  //     shakenTarget.y,
+  //     shieldRadius * 2,
+  //     shieldRadius * 1.3
+  //   );
+  // }
+
   // 타겟 본체 (항상 고정)
   if (!isGameOver) {
-    fill(127);
-    stroke(0);
-    strokeWeight(2);
-    ellipse(
-      shakenTarget.x,
-      shakenTarget.y,
-      shieldRadius * 2,
-      shieldRadius * 1.3
-    );
+    push();
+    translate(shakenTarget.x, shakenTarget.y);
+    rotate(coreVel.heading());
+
+    textAlign(CENTER, CENTER);
+    textSize(shieldRadius * 0.8);
+    textFont("Segoe UI Emoji");
+
+    text("🚀", 0, 0);
+    pop();
   }
 
   // 미사일 업데이트
@@ -143,6 +192,8 @@ function draw() {
           if (extraHits >= maxExtraHits) {
             isGameOver = true;
             spawnCoreExplosion(shakenTarget);
+
+            deathSound.play();
           }
         }
       }
@@ -168,20 +219,67 @@ function draw() {
   let textY = height - 20;
 
   // 색상 결정
-  if (durability <= 20) {
+  if (durability <= shieldWarning) {
     fill(255, 0, 0);
     textX += shakeOffset.x;
     textY += shakeOffset.y;
+
+    // HUD 경고 추가
+    push();
+
+    noStroke();
+    fill(255, 0, 0);
+    textAlign(LEFT, TOP);
+    textSize(48);
+    text("WARNING", 20 + shakeOffset.x, 20 + shakeOffset.y);
+
+    let boxWidth = 220;
+    let boxHeight = 120;
+    let margin = 20;
+
+    let boxX = width - boxWidth - margin + shakeOffset.x;
+    let boxY = margin + shakeOffset.y;
+
+    noFill();
+    stroke(255, 0, 0, 200);
+    strokeWeight(2);
+    rect(boxX, boxY, boxWidth, boxHeight, 1);
+
+    noStroke();
+    fill(255, 0, 0);
+
+    // 왼쪽 정렬
+    textAlign(LEFT, TOP);
+
+    let padding = 15;
+    let startX = boxX + padding;
+    let startY = boxY + padding;
+
+    // 메인 경고 텍스트
+    textSize(20);
+    text("CRITICAL DAMAGE", startX, startY);
+
+    // 서브텍스트 간격 좁혀서
+    textSize(12);
+    let lineGap = 16; // 줄 간격
+    let subStartY = startY + 10;
+
+    text("SYSTEM INSTABILITY DETECTED", startX, subStartY + lineGap * 1);
+    text("CORE TEMPERATURE RISING", startX, subStartY + lineGap * 2);
+    text("EMERGENCY POWER ROUTING ENGAGED", startX, subStartY + lineGap * 3);
+    text("IMMINENT SYSTEM FAILURE", startX, subStartY + lineGap * 4);
+
+    pop();
   } else {
     fill(255);
   }
 
   noStroke();
-  textSize(20);
+  textSize(30);
   textAlign(LEFT, BOTTOM);
 
   // 기존 shakeOffset을 그대로 사용
-  text(`Shield: ${durability}%`, textX, textY);
+  text(`SHIELD: ${durability}%`, textX, textY);
 
   // GAME OVER 표시
   if (isGameOver) {
@@ -198,6 +296,8 @@ function draw() {
 }
 
 function spawnParticles(position, incomingVelocity) {
+  explosionSound.play();
+
   for (let i = 0; i < 3; i++) {
     let vel = p5.Vector.mult(incomingVelocity, -1);
     vel.add(p5.Vector.random2D().mult(2));
@@ -247,18 +347,28 @@ class Missile {
     this.acc.mult(0);
   }
 
+  // show() {
+  //   push();
+  //   translate(this.pos.x, this.pos.y);
+  //   rotate(this.vel.heading());
+  //   fill(220);
+  //   stroke(0);
+  //   strokeWeight(1);
+  //   beginShape();
+  //   vertex(16, 0);
+  //   vertex(-10, -6);
+  //   vertex(-10, 6);
+  //   endShape(CLOSE);
+  //   pop();
+  // }
   show() {
     push();
     translate(this.pos.x, this.pos.y);
     rotate(this.vel.heading());
-    fill(220);
-    stroke(0);
-    strokeWeight(1);
-    beginShape();
-    vertex(16, 0);
-    vertex(-10, -6);
-    vertex(-10, 6);
-    endShape(CLOSE);
+    textAlign(CENTER, CENTER);
+    textSize(20);
+    textFont("sans-serif");
+    text("🪨", 0, 0);
     pop();
   }
 }
@@ -277,7 +387,7 @@ class Particle {
 
   show() {
     noStroke();
-    fill(255, 100, 0, this.lifespan);
+    fill(255, 50, 0, this.lifespan);
     ellipse(this.pos.x, this.pos.y, 8);
   }
 
